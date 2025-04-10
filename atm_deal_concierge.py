@@ -1,6 +1,7 @@
+# atm_deal_concierge.py
 
 import streamlit as st
-import openai
+from openai import OpenAI
 import os
 import requests
 from datetime import datetime
@@ -12,7 +13,7 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-openai.api_key = OPENAI_API_KEY
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ---- Page Config ----
 st.set_page_config(page_title="ATM Deal Concierge", layout="wide")
@@ -70,15 +71,14 @@ Preloaded Q&A:
 User question: {user_question}
     """
 
-    response = openai.ChatCompletion.create(
+    chat_response = client.chat.completions.create(
         model="gpt-3.5-turbo",
-
         messages=[{"role": "user", "content": prompt}],
         max_tokens=400,
         temperature=0.7,
     )
 
-    answer = response.choices[0].message.content.strip()
+    answer = chat_response.choices[0].message.content.strip()
     st.markdown("**Agent Response:**")
     st.write(answer)
 
