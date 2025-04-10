@@ -43,6 +43,17 @@ st.subheader("Data Room Access")
 st.text_input("Enter your email to check NDA status:")
 
 st.markdown("---")
+st.subheader("Questions & Answers")
+
+if qna_data:
+    for row in qna_data:
+        st.markdown(f"**Q:** {row['question']}")
+        st.markdown(f"**A:** {row['answer']}")
+        st.markdown("---")
+else:
+    st.write("No questions available yet.")
+
+st.markdown("---")
 st.subheader("Ask the Concierge Agent")
 user_q = st.text_input("What's your question about this listing?")
 
