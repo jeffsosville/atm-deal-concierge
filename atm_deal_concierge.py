@@ -1,98 +1,91 @@
-# atm_deal_concierge.py
 
 import streamlit as st
-from openai import OpenAI
-from supabase import create_client
-from dotenv import load_dotenv
+import openai
 import os
+import requests
+from datetime import datetime
+from supabase import create_client, Client
 
-# Load env vars locally (optional for local dev)
-load_dotenv()
-
-# Streamlit secrets (used for deployment)
+# ---- Config ----
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
-# Connect to Supabase
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+openai.api_key = OPENAI_API_KEY
 
-# Connect to OpenAI
-client = OpenAI(api_key=OPENAI_API_KEY)
+# ---- Page Config ----
+st.set_page_config(page_title="ATM Deal Concierge", layout="wide")
 
-# Load listing data for Cape Cod (listing_id = 1)
-listing_id = 1
-listing_resp = supabase.table("listings").select("*").eq("id", listing_id).execute()
-listing = listing_resp.data[0] if listing_resp.data else {}
+st.title("Cape Cod ATM Route – Deal Concierge Agent")
 
-# Load Q&A
-qna_resp = supabase.table("questions_and_answers").select("*").eq("listing_id", listing_id).execute()
-qna_data = qna_resp.data if qna_resp.data else []
+# ---- Load Listing Info ----
+listing_id = 1  # Cape Cod hardcoded for now
+listing_data = supabase.table("listings").select("*").eq("id", listing_id).single().execute().data
 
-# -------------------- UI --------------------
-st.title("ATM Deal Concierge Agent")
+if listing_data:
+    st.subheader(f"{listing_data['title']} – {listing_data['location']}")
+    st.markdown(f"**Asking Price:** ${listing_data['asking_price']:,.0f}")
+    st.markdown(f"**Revenue:** ${listing_data['revenue']:,.0f}")
+    st.markdown(f"**Net Profit:** ${listing_data['net_profit']:,.0f}")
+    st.markdown(f"**Number of ATMs:** {listing_data['atm_count']}")
 
-# Debug Supabase connection status
-with st.expander("🔍 Debug: Supabase Connection"):
-    st.write("Listings Table: ✅" if listing else "Listings Table: ❌ No data found")
-    st.write(f"Q&A Rows Loaded: {len(qna_data)}")
+# ---- NDA Check ----
+st.markdown("### Data Room Access")
+user_email = st.text_input("Enter your email to check NDA status:")
+nda_signed = False
 
-if listing:
-    st.subheader(f"{listing.get('title', 'ATM Listing')} – {listing.get('location', '')}")
-    st.markdown(f"**Asking Price:** ${listing.get('asking_price', 'N/A'):,}")
-    st.markdown(f"**Revenue:** ${listing.get('revenue', 'N/A'):,}")
-    st.markdown(f"**Net Profit:** ${listing.get('net_profit', 'N/A'):,}")
-    st.markdown(f"**Number of ATMs:** {listing.get('atm_count', 'N/A')}")
-else:
-    st.warning("⚠️ Listing data could not be loaded.")
-
-st.markdown("---")
-st.subheader("Data Room Access")
-st.text_input("Enter your email to check NDA status:")
-
-st.markdown("---")
-st.subheader("Questions & Answers")
-
-if qna_data:
-    for row in qna_data:
-        st.markdown(f"**Q:** {row['question']}")
-        st.markdown(f"**A:** {row['answer']}")
-        st.markdown("---")
-else:
-    st.write("No questions available yet.")
-
-st.markdown("---")
-st.subheader("Ask the Concierge Agent")
-user_q = st.text_input("What's your question about this listing?")
-
-if user_q:
-    # Try to answer from Supabase first
-    best_match = None
-    for row in qna_data:
-        if user_q.lower() in row['question'].lower():
-            best_match = row
-            break
-
-    if best_match:
-        st.markdown("**Agent Response:**")
-        st.success(best_match['answer'])
+if user_email:
+    result = supabase.table("nda_signatures").select("*").eq("email", user_email).eq("listing_id", listing_id).execute().data
+    if result:
+        nda_signed = True
+        st.success("NDA is on file. You may access the data room below.")
+        st.markdown(f"[Access Google Drive Data Room]({listing_data['google_drive_link']})")
     else:
-        # Use OpenAI fallback
-        prompt = f"Answer this buyer question about ATMs or ATM routes: {user_q}"
-        try:
-            chat_response = client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            st.markdown("**Agent Response (GPT fallback):**")
-            st.success(chat_response.choices[0].message.content)
-        except Exception as e:
-            st.error("Agent failed to respond. Please try again.")
-            st.exception(e)
+        st.warning("No NDA found for this listing. Please sign the NDA form to gain access.")
 
-# Debug toggle to view all loaded Q&A rows
-if st.checkbox("🔍 Show All Loaded Q&A Rows"):
-    for row in qna_data:
-        st.markdown(f"**Q:** {row['question']}")
-        st.markdown(f"**A:** {row['answer']}")
-        st.markdown("---")
+# ---- Chat with GPT ----
+st.markdown("### Ask the Concierge Agent")
+
+user_question = st.text_input("What's your question about this listing?")
+if user_question:
+    # Load Q&A pairs
+    qa_data = supabase.table("questions_and_answers").select("*").eq("listing_id", listing_id).execute().data
+    context = "\n".join([f"Q: {qa['question']}\nA: {qa['answer']}" for qa in qa_data])
+
+    prompt = f"""
+You are a helpful ATM Deal Concierge Agent. Answer the user's question using the listing info below and any preloaded Q&A.
+
+Listing:
+Title: {listing_data['title']}
+Location: {listing_data['location']}
+Asking Price: ${listing_data['asking_price']}
+Revenue: ${listing_data['revenue']}
+Net Profit: ${listing_data['net_profit']}
+ATMs: {listing_data['atm_count']}
+
+Preloaded Q&A:
+{context}
+
+User question: {user_question}
+    """
+
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=400,
+        temperature=0.7,
+    )
+
+    answer = response.choices[0].message.content.strip()
+    st.markdown("**Agent Response:**")
+    st.write(answer)
+
+    # Optional: log chat
+    supabase.table("chat_logs").insert({
+        "listing_id": listing_id,
+        "user_input": user_question,
+        "agent_response": answer,
+        "timestamp": datetime.now().isoformat()
+    }).execute()
