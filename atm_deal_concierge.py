@@ -32,11 +32,19 @@ qna_data = qna_resp.data if qna_resp.data else []
 # -------------------- UI --------------------
 st.title("ATM Deal Concierge Agent")
 
-st.subheader(f"{listing.get('title', 'ATM Listing')} – {listing.get('location', '')}")
-st.markdown(f"**Asking Price:** ${listing.get('asking_price', 'N/A'):,}")
-st.markdown(f"**Revenue:** ${listing.get('revenue', 'N/A'):,}")
-st.markdown(f"**Net Profit:** ${listing.get('net_profit', 'N/A'):,}")
-st.markdown(f"**Number of ATMs:** {listing.get('atm_count', 'N/A')}")
+# Debug Supabase connection status
+with st.expander("🔍 Debug: Supabase Connection"):
+    st.write("Listings Table: ✅" if listing else "Listings Table: ❌ No data found")
+    st.write(f"Q&A Rows Loaded: {len(qna_data)}")
+
+if listing:
+    st.subheader(f"{listing.get('title', 'ATM Listing')} – {listing.get('location', '')}")
+    st.markdown(f"**Asking Price:** ${listing.get('asking_price', 'N/A'):,}")
+    st.markdown(f"**Revenue:** ${listing.get('revenue', 'N/A'):,}")
+    st.markdown(f"**Net Profit:** ${listing.get('net_profit', 'N/A'):,}")
+    st.markdown(f"**Number of ATMs:** {listing.get('atm_count', 'N/A')}")
+else:
+    st.warning("⚠️ Listing data could not be loaded.")
 
 st.markdown("---")
 st.subheader("Data Room Access")
@@ -82,7 +90,9 @@ if user_q:
             st.error("Agent failed to respond. Please try again.")
             st.exception(e)
 
-# Uncomment this to show debug Q&A:
-# if st.checkbox("Show sample Q&A"):
-#     for row in qna_data[:5]:
-#         st.markdown(f"**Q:** {row['question']}\n\n**A:** {row['answer']}")
+# Debug toggle to view all loaded Q&A rows
+if st.checkbox("🔍 Show All Loaded Q&A Rows"):
+    for row in qna_data:
+        st.markdown(f"**Q:** {row['question']}")
+        st.markdown(f"**A:** {row['answer']}")
+        st.markdown("---")
