@@ -2,8 +2,6 @@
 
 import streamlit as st
 from openai import OpenAI
-import os
-import requests
 from datetime import datetime
 from supabase import create_client, Client
 
@@ -18,18 +16,24 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # ---- Page Config ----
 st.set_page_config(page_title="ATM Deal Concierge", layout="wide")
 
-st.title("Cape Cod ATM Route – Deal Concierge Agent")
+# ---- Sidebar Listing Selector ----
+st.sidebar.title("Select ATM Route")
+listings = supabase.table("listings").select("id, title, location").execute().data
+listing_options = {f"{l['title']} – {l['location']}": l['id'] for l in listings}
+selected_listing = st.sidebar.selectbox("Choose a Route", options=list(listing_options.keys()))
+listing_id = listing_options[selected_listing]
 
-# ---- Load Listing Info ----
-listing_id = 1  # Cape Cod hardcoded for now
+# ---- Load Selected Listing Info ----
 listing_data = supabase.table("listings").select("*").eq("id", listing_id).single().execute().data
 
-if listing_data:
-    st.subheader(f"{listing_data['title']} – {listing_data['location']}")
-    st.markdown(f"**Asking Price:** ${listing_data['asking_price']:,.0f}")
+# ---- Display Listing Info ----
+st.title(f"{listing_data['title']} – Deal Concierge Agent")
+st.subheader(f"Location: {listing_data['location']}")
+st.markdown(f"**Asking Price:** ${listing_data['asking_price']:,.0f}")
+if listing_data.get("revenue"):
     st.markdown(f"**Revenue:** ${listing_data['revenue']:,.0f}")
-    st.markdown(f"**Net Profit:** ${listing_data['net_profit']:,.0f}")
-    st.markdown(f"**Number of ATMs:** {listing_data['atm_count']}")
+st.markdown(f"**Net Profit:** ${listing_data['net_profit']:,.0f}")
+st.markdown(f"**Number of ATMs:** {listing_data['atm_count']}")
 
 # ---- NDA Check ----
 st.markdown("### Data Room Access")
@@ -37,7 +41,8 @@ user_email = st.text_input("Enter your email to check NDA status:")
 nda_signed = False
 
 if user_email:
-    result = supabase.table("nda_signatures").select("*").eq("email", user_email).eq("listing_id", listing_id).execute().data
+    result = supabase.table("nda_signatures").select("*") \
+        .eq("email", user_email).eq("listing_id", listing_id).execute().data
     if result:
         nda_signed = True
         st.success("NDA is on file. You may access the data room below.")
@@ -45,13 +50,13 @@ if user_email:
     else:
         st.warning("No NDA found for this listing. Please sign the NDA form to gain access.")
 
-# ---- Chat with GPT ----
+# ---- GPT Concierge Q&A ----
 st.markdown("### Ask the Concierge Agent")
 
 user_question = st.text_input("What's your question about this listing?")
 if user_question:
-    # Load Q&A pairs
-    qa_data = supabase.table("questions_and_answers").select("*").eq("listing_id", listing_id).execute().data
+    qa_data = supabase.table("questions_and_answers") \
+        .select("*").eq("listing_id", listing_id).execute().data
     context = "\n".join([f"Q: {qa['question']}\nA: {qa['answer']}" for qa in qa_data])
 
     prompt = f"""
@@ -61,7 +66,7 @@ Listing:
 Title: {listing_data['title']}
 Location: {listing_data['location']}
 Asking Price: ${listing_data['asking_price']}
-Revenue: ${listing_data['revenue']}
+Revenue: ${listing_data.get('revenue', 'N/A')}
 Net Profit: ${listing_data['net_profit']}
 ATMs: {listing_data['atm_count']}
 
@@ -82,7 +87,7 @@ User question: {user_question}
     st.markdown("**Agent Response:**")
     st.write(answer)
 
-    # Optional: log chat
+    # Log chat interaction
     supabase.table("chat_logs").insert({
         "listing_id": listing_id,
         "user_input": user_question,
