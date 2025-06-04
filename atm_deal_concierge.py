@@ -55,20 +55,26 @@ st.markdown("### Ask the Concierge Agent")
 
 user_question = st.text_input("What's your question about this listing?")
 if user_question:
+    # Load both listing-specific and global Q&A
     qa_data = supabase.table("questions_and_answers") \
-        .select("*").eq("listing_id", listing_id).execute().data
+        .select("*").in_("listing_id", [listing_id, 0]).execute().data
     context = "\n".join([f"Q: {qa['question']}\nA: {qa['answer']}" for qa in qa_data])
 
+    # Build prompt
+    listing_notes = listing_data.get("notes", "")
+    description = listing_data.get("description", "")
     prompt = f"""
-You are a helpful ATM Deal Concierge Agent. Answer the user's question using the listing info below and any preloaded Q&A.
+You are a helpful and experienced ATM Deal Concierge Agent.
 
-Listing:
+Listing Info:
 Title: {listing_data['title']}
 Location: {listing_data['location']}
 Asking Price: ${listing_data['asking_price']}
 Revenue: ${listing_data.get('revenue', 'N/A')}
 Net Profit: ${listing_data['net_profit']}
 ATMs: {listing_data['atm_count']}
+Notes: {listing_notes}
+Description: {description}
 
 Preloaded Q&A:
 {context}
@@ -77,9 +83,12 @@ User question: {user_question}
     """
 
     chat_response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=400,
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "You are an expert ATM route advisor helping buyers understand and evaluate specific listings."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=500,
         temperature=0.7,
     )
 
